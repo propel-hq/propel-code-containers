@@ -1,0 +1,64 @@
+name: Build and Push Container Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  MULTILANG_IMAGE: ghcr.io/propel-hq/propel-code-containers/multilang
+  JAVASCRIPT_IMAGE: ghcr.io/propel-hq/propel-code-containers/javascript
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch container-server from propel-code-mobile
+        run: |
+          mkdir -p container-server
+          curl -fsSL https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/server.js -o container-server/server.js
+          curl -fsSL https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/package.json -o container-server/package.json
+          echo "Fetched container-server files:"
+          ls -la container-server/
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push multilang image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.multilang
+          push: true
+          tags: |
+            ${{ env.MULTILANG_IMAGE }}:latest
+            ${{ env.MULTILANG_IMAGE }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=multilang
+          cache-to: type=gha,mode=max,scope=multilang
+
+      - name: Build and push javascript image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.javascript
+          push: true
+          tags: |
+            ${{ env.JAVASCRIPT_IMAGE }}:latest
+            ${{ env.JAVASCRIPT_IMAGE }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=javascript
+          cache-to: type=gha,mode=max,scope=javascript

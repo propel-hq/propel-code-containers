@@ -1,0 +1,132 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+RUN apt-get update && apt-get install -y \
+    git curl wget build-essential openssl ca-certificates \
+    zsh tmux htop unzip zip jq iproute2 \
+    python3 python3-pip python3-venv \
+    libssl-dev libreadline-dev zlib1g-dev \
+    golang-go \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- -y
+
+RUN useradd -m -s /bin/bash linuxbrew \
+    && echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+ENV HOMEBREW_NO_AUTO_UPDATE=1
+RUN su - linuxbrew -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
+
+ENV NVM_DIR=/root/.nvm
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
+    && . $NVM_DIR/nvm.sh \
+    && nvm install 22 \
+    && nvm alias default 22 \
+    && npm install -g yarn pnpm bun
+
+ENV PYTHON_VENV=/root/.python-venv
+RUN python3 -m venv $PYTHON_VENV \
+    && $PYTHON_VENV/bin/pip install --upgrade pip \
+    && $PYTHON_VENV/bin/pip install poetry uv django flask fastapi uvicorn jupyter
+
+RUN apt-get update && apt-get install -y gnupg2 && rm -rf /var/lib/apt/lists/*
+RUN gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3 7D2BAF1CF37B13E2069D6956105BD0E739499BDB
+RUN curl -sSL https://get.rvm.io | bash -s stable
+RUN /bin/bash -l -c "rvm get master && rvm install 4.0.2 && rvm install 3.4.9 && rvm use 4.0.2 --default && gem install bundler rails && rvm use 3.4.9 && gem install bundler rails"
+
+ENV ERLANG_VERSION=27
+ENV ELIXIR_VERSION=1.17
+RUN apt-get update && apt-get install -y erlang elixir && rm -rf /var/lib/apt/lists/* || true
+
+ENV GOPATH=/root/go
+ENV PATH="$GOPATH/bin:$NVM_DIR/versions/node/v22.0.0/bin:$PYTHON_VENV/bin:$PATH"
+
+RUN . $NVM_DIR/nvm.sh \
+    && npm install -g @anthropic-ai/claude-code @openai/codex
+
+RUN go install github.com/opencode-ai/opencode@latest || true
+
+RUN mkdir -p /root/.config && echo '\
+[character]\n\
+success_symbol = "[❯](green)"\n\
+error_symbol = "[❯](red)"\n\
+\n\
+[directory]\n\
+truncation_length = 1\n\
+truncate_to_repo = true\n\
+\n\
+[git_branch]\n\
+format = "[$branch]($style) "\n\
+\n\
+[git_status]\n\
+disabled = true\n\
+\n\
+[package]\n\
+disabled = true\n\
+\n\
+[nodejs]\n\
+disabled = true\n\
+\n\
+[python]\n\
+disabled = true\n\
+\n\
+[ruby]\n\
+disabled = true\n\
+\n\
+[golang]\n\
+disabled = true\n\
+\n\
+[elixir]\n\
+disabled = true\n\
+\n\
+[erlang]\n\
+disabled = true\n\
+\n\
+[username]\n\
+disabled = true\n\
+\n\
+[hostname]\n\
+disabled = true\n\
+\n\
+[cmd_duration]\n\
+disabled = true\n\
+' > /root/.config/starship.toml
+
+RUN echo '\
+export HISTFILE=~/.zsh_history\n\
+export HISTSIZE=10000\n\
+export SAVEHIST=10000\n\
+setopt appendhistory\n\
+setopt sharehistory\n\
+setopt hist_ignore_dups\n\
+setopt hist_ignore_space\n\
+\n\
+export NVM_DIR="/root/.nvm"\n\
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n\
+\n\
+export PATH="$GOPATH/bin:$NVM_DIR/versions/node/v22.0.0/bin:/root/.python-venv/bin:$PATH"\n\
+\n\
+[[ -s "/usr/local/rvm/scripts/rvm" ]] && source "/usr/local/rvm/scripts/rvm"\n\
+\n\
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"\n\
+\n\
+eval "$(starship init zsh)"\n\
+' > /root/.zshrc
+
+RUN chsh -s /bin/zsh root || true
+
+RUN mkdir -p /propel-code
+
+COPY container-server/package.json /opt/propel-agent/package.json
+COPY container-server/server.js /opt/propel-agent/server.js
+
+RUN . $NVM_DIR/nvm.sh && cd /opt/propel-agent && npm install
+
+EXPOSE 3100
+
+WORKDIR /propel-code
+
+CMD ["/bin/zsh", "-c", "source $NVM_DIR/nvm.sh && node /opt/propel-agent/server.js"]

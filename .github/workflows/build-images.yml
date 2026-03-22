@@ -24,8 +24,12 @@ jobs:
       - name: Fetch container-server from propel-code-mobile
         run: |
           mkdir -p container-server
-          curl -fsSL https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/server.js -o container-server/server.js
-          curl -fsSL https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/package.json -o container-server/package.json
+          curl -fsSL -H "Authorization: token ${{ secrets.MOBILE_REPO_TOKEN }}" \
+            https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/server.js \
+            -o container-server/server.js
+          curl -fsSL -H "Authorization: token ${{ secrets.MOBILE_REPO_TOKEN }}" \
+            https://raw.githubusercontent.com/propel-hq/propel-code-mobile/main/docker/container-server/package.json \
+            -o container-server/package.json
           echo "Fetched container-server files:"
           ls -la container-server/
 
